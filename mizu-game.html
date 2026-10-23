@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>チュートリアル｜みずのうばいあい</title>
+<!-- ドット絵風フォント（オフラインのときは自動で代わりのフォントになる） -->
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+  /* ===== 画面全体のスタイル ===== */
+  html, body {
+    margin: 0; height: 100%;
+    background: #120c08; color: #fff;
+    font-family: "DotGothic16", "MS Gothic", "Hiragino Kaku Gothic ProN", monospace;
+  }
+  body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+  /* ゲーム画面の枠。縦横比 16:10 を保って画面いっぱいに拡大する */
+  #wrap {
+    position: relative;
+    width: min(100vw, 160vh);
+    aspect-ratio: 16 / 10;
+    container-type: inline-size;   /* cqw = この枠の幅の1% */
+    background: #000;
+  }
+  /* image-rendering: pixelated で、拡大してもドットがくっきり見える（16bit風） */
+  canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+
+  /* ===== HUD（上の情報バー） ===== */
+  #hud {
+    position: absolute; left: 0; right: 0; top: 0;
+    padding: 1cqw 1.5cqw 2cqw;
+    display: flex; flex-wrap: wrap; gap: .6cqw 2cqw; align-items: center;
+    font-size: 2cqw;
+    background: linear-gradient(#000c, #0000);
+    text-shadow: .2cqw .2cqw 0 #000;
+    pointer-events: none;
+  }
+  .bar { display: inline-block; width: 9cqw; height: 1.3cqw; background: #2a1a0e;
+         border: .2cqw solid #fff; vertical-align: middle; }
+  .bar i { display: block; height: 100%; width: 50%; background: #4aa3df; }
+  #bTime i { background: #ffb02e; }
+  #bStam i { background: #6fdc6f; }
+  .hot { color: #ff6b5e; }
+
+  /* 画面下のメッセージ */
+  #msg {
+    position: absolute; left: 0; right: 0; bottom: 2cqw; text-align: center;
+    font-size: 2.4cqw; color: #ffd84a; text-shadow: .25cqw .25cqw 0 #000;
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  /* 操作ヒント（画面右下） */
+  #help { position: absolute; right: 1cqw; bottom: .8cqw; font-size: 1.5cqw; color: #fffb;
+          text-shadow: .15cqw .15cqw 0 #000; pointer-events: none; }
+
+  /* ===== タイトル・結果の画面 ===== */
+  #screen {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 6, 2, .75);
+  }
+  #panel {
+    width: 86%; max-height: 94%; overflow: auto; box-sizing: border-box;
+    padding: 2cqw 3cqw 2.4cqw;
+    background: #2a1a0e; border: .5cqw solid #ffd84a;
+    box-shadow: 0 0 0 .5cqw #000, 1cqw 1cqw 0 .5cqw #000;
+    font-size: 2.1cqw; line-height: 1.65;
+  }
+  #panel h1 { font-size: 5.2cqw; margin: 0; color: #ffd84a; letter-spacing: .3cqw; }
+  #panel h2 { font-size: 3.4cqw; margin: 0 0 .6cqw; color: #ffd84a; }
+  #panel p { margin: .5cqw 0; }
+  #panel .sub { color: #ffb02e; margin-bottom: 1cqw; }
+  #panel .bad { color: #ff7b6e; }
+  #panel .fact { margin-top: 1.2cqw; padding: 1cqw 1.4cqw; background: #0006; border-left: .5cqw solid #4aa3df; }
+  #panel ul { margin: .4cqw 0 .4cqw 2cqw; padding: 0; }
+  #panel kbd { background: #fff; color: #2a1a0e; padding: 0 .6cqw; box-shadow: .2cqw .2cqw 0 #000; }
+  #btn {
+    font: inherit; font-size: 2.6cqw; margin-top: 1.4cqw; padding: .8cqw 3.5cqw;
+    background: #ffd84a; color: #2a1a0e; border: 0; cursor: pointer; box-shadow: .4cqw .4cqw 0 #000;
+  }
+  #btn:hover { background: #fff; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <!-- HUD：ゲーム中の数値表示 -->
+  <div id="hud">
+    <span id="hStage">チュートリアル</span>
+    <span id="hDay">1日目</span>
+    <span>日没まで <span class="bar" id="bTime"><i></i></span></span>
+    <span id="hHearts">家族 ♥♥♥</span>
+    <span>持ち水 <b id="hCarry">0.0</b>/<span id="hCap">10</span>L</span>
+    <span>家の水 <b id="hStored">0.0</b>L（今日の必要 <b id="hQuota">14</b>L）</span>
+    <span><b id="hWellLabel">井戸1</b> <span class="bar" id="bWell"><i></i></span></span>
+    <span>体力 <span class="bar" id="bStam"><i></i></span></span>
+  </div>
+  <div id="msg"></div>
+  <div id="help">移動:矢印/WASD　井戸の位置:番号付き矢印　水くみ:近くで Space 長押し　ダッシュ:Shift　音:M</div>
+
+  <!-- タイトル・日没・ゲームオーバーで使う画面 -->
+  <div id="screen">
+    <div id="panel">
+      <div id="panelBody"></div>
+      <button id="btn">はじめる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   みずのうばいあい
+   ねらい：水が足りない地域の「毎日の水くみ」を、ゲームで体験する。
+   ・井戸の水は少しずつしか湧かない（ぜんぶ使い切ったら終わり）
+   ・村人（NPC）もみんな水がほしい → 井戸のまわりは大混雑
+   ・家までは遠い。運ぶ水が重くて、歩くのが遅くなる
+   ・このゲームに「クリア」はない。何日、家族を守れるかを競う。
+   ===================================================================== */
+
+// ---------- 定数（数字を変えるとゲームの難しさが変わる） ----------
+const VIEW_W = 320, VIEW_H = 200;      // 画面の解像度（小さいので拡大するとドット絵になる）
+const WORLD_W = 960, WORLD_H = 560;    // マップ全体の大きさ
+const DAY_LEN = 110;                   // 1日の長さ（秒）
+const CARRY_MAX = 10;                  // いちどに運べる水の量（L）＝ポリタンク1つ分
+const HOME = { x: 110, y: 280 };       // 家の位置
+const DEP  = { x: 150, y: 292 };       // 水がめ（ここで水を届ける）
+const DEP_R = 28;                      // 水がめの届け判定の半径
+const WELLS = [                          // 井戸の位置（マップ各地に分散）
+  { x: 700, y: 280 }, { x: 300, y: 100 }, { x: 780, y: 470 }
+];
+const WELL_R = 11;                     // 井戸の当たり判定（中には入れない）
+const DRAW_R = 30;                     // 井戸からこの距離以内なら水をくめる
+const SLOTS = 8;                       // 井戸でいっぺんに水をくめる村人の数
+const BODY_R = 4.5;                    // 人の体の大きさ（ぶつかり判定）
+const PX_TO_M = 2;                     // 1ドット＝2mとして、歩いた距離を計算する
+
+// 村人が出てくる場所（マップのはし）
+const SPAWNS = [
+  {x:940,y:40},{x:940,y:520},{x:640,y:12},{x:640,y:548},{x:900,y:280},
+  {x:420,y:12},{x:420,y:548},{x:930,y:160},{x:930,y:400}
+];
+const SHIRTS = ['#c0392b','#2e86c1','#27ae60','#8e44ad','#e67e22','#ecf0f1','#16a085'];
+const SKINS  = ['#8d5524','#6f4018','#a86a3a'];
+
+// 一日の終わりに表示する豆知識。
+// ※数字は授業で WHO/UNICEF JMP などの一次情報を確認して、最新の値に直そう！
+const FACTS = [
+  '世界では約22億人が、自宅で安全に管理された飲み水を使えていません（WHO/UNICEF 2022年の推計）。',
+  '日本の家庭では、1人1日およそ200L前後の水を使うと言われます。ゲームの「必要な水」は、それよりずっと少ない量です。',
+  '水くみは、多くの地域で女性や子どもの仕事です。往復30分以上かかる人も少なくありません。',
+  '世界全体で、1日に2億時間以上が水くみに使われているとも言われます（国連機関などの推計）。',
+  '汚れた水が原因の病気（下痢など）で、5歳未満の子どもが命を落とすことがあります。',
+  '干ばつや地下水の減少で井戸が枯れ、さらに遠い水場へ通う村もあります。',
+  'WHOは、最低限の飲み水・調理・衛生に1人1日およそ20Lを目安のひとつにしています。'
+];
+
+// ---------- 小さな道具 ----------
+const el = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a);          // a〜bの乱数
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);     // 2点の距離
+
+const cv = el('game');
+cv.width = VIEW_W; cv.height = VIEW_H;
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// ---------- ゲームの状態 ----------
+const G = {
+  mode: 'title',          // title / play / dayend / over
+  tutorial: true,
+  day: 1, hearts: 3,      // 何日目か、家族の元気（ハート）
+  stored: 0,              // 家にたまっている水（L）
+  quota: 14,              // 今日の必要な水（L）
+  time: DAY_LEN,          // 日没までの残り秒数
+  okDays: 0,              // 家族を守れた日数
+  wells: WELLS.map(() => ({ level: 0, cap: 1, refill: 0 })),
+  slotT: 0,               // 井戸の順番を決め直すタイマー
+  total: { delivered: 0, stolenFrom: 0, stolenBy: 0, px: 0 },   // ぜんぶの合計
+  today: { delivered: 0, stolenFrom: 0, stolenBy: 0 }           // 今日だけ
+};
+// プレイヤー（ジョン）
+const P = { x: 0, y: 0, carry: 0, stamina: 100, tired: false, dash: false,
+            walk: 0, moving: false, stealCd: 0 };
+let npcs = [];     // 村人たち
+let parts = [];    // パーティクル（砂ぼこり・水しぶき）
+
+let best = 0;
+try { best = +localStorage.getItem('mizu_best') || 0; } catch (e) {}
+
+// ---------- 音（WebAudioでピコピコ音） ----------
+let ac = null, muted = false;
+function beep(freq, dur = 0.08, type = 'square', vol = 0.04) {
+  if (muted) return;
+  try {
+    if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime + dur);
+  } catch (e) {}
+}
+
+// ---------- 入力 ----------
+const keys = {};
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  // 画面（タイトルなど）が出ているときは Enter / Space でボタンを押す
+  if (el('screen').style.display !== 'none') {
+    if ((k === 'enter' || k === ' ') && !e.repeat) el('btn').click();
+    return;
+  }
+  keys[k] = true;
+  if (k === 'm' && !e.repeat) muted = !muted;
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+// ---------- 画面（タイトル・日没・ゲームオーバー） ----------
+function showScreen(html, label, cb) {
+  el('panelBody').innerHTML = html;
+  const b = el('btn');
+  b.textContent = label;
+  b.onclick = () => { el('screen').style.display = 'none'; b.blur(); cb(); };
+  el('screen').style.display = 'flex';
+}
+
+// ---------- メッセージ表示 ----------
+let msgT = 0;
+function msg(text, sec = 1.8) {
+  el('msg').textContent = text;
+  el('msg').style.opacity = 1;
+  msgT = sec;
+}
+
+// ---------- 地面（最初に1回だけ描いて使い回す） ----------
+function buildGround() {
+  const c = document.createElement('canvas');
+  c.width = WORLD_W; c.height = WORLD_H;
+  const g = c.getContext('2d');
+  let s = 12345;                                   // 毎回同じ模様になる乱数
+  const r = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+
+  g.fillStyle = '#d8b36c'; g.fillRect(0, 0, WORLD_W, WORLD_H);       // 乾いた大地
+  for (let i = 0; i < 5000; i++) {                                    // 砂のつぶつぶ（濃淡）
+    g.fillStyle = r() < 0.5 ? '#cfa45e' : '#e3c382';
+    g.fillRect(r() * WORLD_W | 0, r() * WORLD_H | 0, 2, 1);
+  }
+  // 家と井戸をつなぐ踏み固められた道
+  for (let x = 0; x < WORLD_W; x += 2) {
+    const yy = HOME.y + 12 + Math.sin(x / 70) * 6;
+    for (let y = -9; y <= 9; y++) {
+      if (r() < 0.8) { g.fillStyle = r() < 0.5 ? '#c79c5a' : '#bf9250'; g.fillRect(x, yy + y | 0, 2, 1); }
+    }
+  }
+  // 干ばつでひび割れた地面
+  g.fillStyle = '#9c6b34';
+  for (let i = 0; i < 90; i++) {
+    let x = r() * WORLD_W, y = r() * WORLD_H;
+    const len = 8 + r() * 14 | 0;
+    for (let j = 0; j < len; j++) {
+      g.fillRect(x | 0, y | 0, 1, 1);
+      x += r() < 0.5 ? 1 : -1; y += r() < 0.5 ? 1 : 0;
+      if (r() < 0.05) { x += 1; y += 1; }
+    }
+  }
+  // 枯れ草
+  for (let i = 0; i < 160; i++) {
+    const x = r() * WORLD_W | 0, y = r() * WORLD_H | 0;
+    g.fillStyle = '#a58b3c'; g.fillRect(x, y, 1, 3); g.fillRect(x + 2, y + 1, 1, 2); g.fillRect(x - 2, y + 1, 1, 2);
+  }
+  // 石ころ
+  for (let i = 0; i < 40; i++) {
+    const x = r() * WORLD_W | 0, y = r() * WORLD_H | 0;
+    g.fillStyle = '#8a7a66'; g.fillRect(x, y, 5, 3);
+    g.fillStyle = '#b3a38c'; g.fillRect(x, y, 4, 1);
+  }
+  return c;
+}
+const ground = buildGround();
+
+// ---------- ドット絵スプライト ----------
+const spriteCache = {};
+// 人のドット絵を作る（色の組み合わせごとに1回だけ作ってキャッシュ）
+function personSprite(shirt, skin, band, frame) {
+  const key = shirt + skin + band + frame;
+  if (spriteCache[key]) return spriteCache[key];
+  const c = document.createElement('canvas'); c.width = 12; c.height = 16;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(2, 14, 8, 2);          // 影
+  g.fillStyle = '#4a3a2a';                                           // 足（2コマで歩く）
+  if (frame === 0) { g.fillRect(3, 11, 2, 3); g.fillRect(7, 11, 2, 3); }
+  else { g.fillRect(3, 11, 2, 2); g.fillRect(7, 12, 2, 2); }
+  g.fillStyle = shirt; g.fillRect(2, 6, 8, 5);                       // 服
+  g.fillStyle = skin;  g.fillRect(1, 6, 1, 4); g.fillRect(10, 6, 1, 4); // 腕
+  g.fillRect(3, 1, 6, 5);                                            // 顔
+  g.fillStyle = '#2b1b12'; g.fillRect(3, 0, 6, 2);                   // 髪
+  if (band) { g.fillStyle = band; g.fillRect(3, 2, 6, 1); }          // 鉢巻
+  g.fillStyle = '#111'; g.fillRect(4, 3, 1, 1); g.fillRect(7, 3, 1, 1); // 目
+  return (spriteCache[key] = c);
+}
+
+// 家のドット絵
+const houseSprite = (() => {
+  const c = document.createElement('canvas'); c.width = 44; c.height = 34;
+  const g = c.getContext('2d');
+  g.fillStyle = '#b5834a'; g.fillRect(4, 12, 36, 20);                // 土壁
+  g.fillStyle = '#8f6334'; for (let x = 6; x < 40; x += 6) g.fillRect(x, 12, 1, 20);
+  for (let r = 0; r < 13; r++) {                                      // わらぶき屋根
+    const w = 14 + r * 2.6, x = 22 - w / 2;
+    g.fillStyle = r % 2 ? '#6a4c1a' : '#7e5c25'; g.fillRect(x | 0, r, w | 0, 1);
+  }
+  g.fillStyle = '#3b2614'; g.fillRect(18, 22, 8, 10);                // ドア
+  g.fillStyle = '#2b1a10'; g.fillRect(30, 18, 5, 5);                 // 窓
+  return c;
+})();
+
+function drawHouse(cx, cy) {
+  ctx.drawImage(houseSprite, HOME.x - 22 - cx, HOME.y - 30 - cy);
+  // 水がめ（たまった水の量が見える）
+  const px = DEP.x - cx, py = DEP.y - cy;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(px - 7, py + 1, 14, 3);
+  ctx.fillStyle = '#7a4a2a'; ctx.fillRect(px - 6, py - 11, 12, 12);
+  ctx.fillStyle = '#2b1a10'; ctx.fillRect(px - 5, py - 11, 10, 2);
+  const f = Math.min(1, G.stored / Math.max(1, G.quota));
+  ctx.fillStyle = '#4aa3df'; const h = Math.round(8 * f); ctx.fillRect(px - 4, py - 1 - h, 8, h);
+}
+
+function drawWell(position, well, index, cx, cy) {
+  const x = position.x - cx, y = position.y - cy;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x - 15, y + 8, 30, 5);
+  ctx.fillStyle = '#8c8c8c'; ctx.fillRect(x - 13, y - 2, 26, 12);    // 石の井戸枠
+  ctx.fillStyle = '#bdbdbd'; ctx.fillRect(x - 13, y - 5, 26, 5);
+  const f = well.level / well.cap;                                    // 水位で水面の色が変わる
+  ctx.fillStyle = f > 0.02 ? (f > 0.3 ? '#2f7fd1' : '#6a8fb8') : '#3a2a1a';
+  ctx.fillRect(x - 9, y - 4, 18, 3);
+  ctx.fillStyle = '#6b4a1f'; ctx.fillRect(x - 12, y - 20, 2, 16); ctx.fillRect(x + 10, y - 20, 2, 16); // 柱
+  ctx.fillStyle = '#8a5e26'; ctx.fillRect(x - 14, y - 22, 28, 3);                                  // 屋根
+  ctx.fillStyle = '#000'; ctx.fillRect(x - 14, y - 28, 28, 4);                                     // 水位バー
+  ctx.fillStyle = '#4aa3df'; ctx.fillRect(x - 13, y - 27, Math.round(26 * f), 2);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(String(index + 1), x, y - 31);
+}
+
+function drawNPC(n, cx, cy) {
+  const sx = Math.round(n.x - cx), sy = Math.round(n.y - cy);
+  if (sx < -16 || sx > VIEW_W + 16 || sy < -20 || sy > VIEW_H + 20) return; // 画面の外は描かない
+  const moving = Math.hypot(n.vx, n.vy) > 4;
+  const frame = moving ? (Math.floor(n.walk) % 2) : 0;
+  ctx.drawImage(personSprite(n.shirt, n.skin, n.rough ? '#d62020' : null, frame), sx - 6, sy - 14);
+  if (n.load > 0.5) { ctx.fillStyle = '#4aa3df'; ctx.fillRect(sx - 3, sy - 17, 6, 3); } // 水を頭にのせている
+}
+
+function drawPlayer(cx, cy) {
+  const sx = Math.round(P.x - cx), sy = Math.round(P.y - cy);
+  const frame = P.moving ? (Math.floor(P.walk) % 2) : 0;
+  // 目立つように足元に白いリング
+  ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1;
+  ctx.strokeRect(sx - 5.5, sy - 1.5, 11, 4);
+  ctx.drawImage(personSprite('#2fc4e8', '#7a4a22', '#ffffff', frame), sx - 6, sy - 14);
+  // ポリタンク（中の水の量も見える）
+  if (P.carry > 0.05) {
+    ctx.fillStyle = '#e0b020'; ctx.fillRect(sx + 6, sy - 9, 6, 7);
+    ctx.fillStyle = '#333';    ctx.fillRect(sx + 7, sy - 11, 3, 2);
+    const h = Math.round(5 * P.carry / CARRY_MAX);
+    ctx.fillStyle = '#4aa3df'; ctx.fillRect(sx + 7, sy - 3 - h, 4, h);
+  }
+}
+
+// ---------- パーティクル ----------
+function drops(x, y, n, col) {                     // 水しぶき
+  for (let i = 0; i < n; i++)
+    parts.push({ x, y: y - 6, vx: rnd(-25, 25), vy: rnd(-60, -20), life: rnd(.4, .8), col: col || '#4aa3df' });
+}
+function dust(x, y) {                              // 砂ぼこり
+  parts.push({ x: x + rnd(-3, 3), y: y - 1, vx: rnd(-8, 8), vy: rnd(-14, -4), life: rnd(.2, .45), col: '#ead7a8' });
+}
+
+// ---------- 村人（NPC）の生まれ方 ----------
+function spawnNPC(n, near) {
+  n.state = 'toWell'; n.load = 0; n.want = rnd(3, 6);      // 3〜6L ほしい
+  n.patience = rnd(25, 45);                               // 待てる時間（秒）
+  n.drawing = false; n.vx = n.vy = 0;
+  n.well = near ? Math.random() * WELLS.length | 0 : nearestWellIndex(n.spawn);
+  const well = WELLS[n.well];
+  // 井戸のまわりのどこかを目指す（ばらけて群衆になる）
+  const a = Math.random() * Math.PI * 2, r = rnd(14, 48);
+  n.tx = well.x + Math.cos(a) * r; n.ty = well.y + Math.sin(a) * r * 0.8;
+  if (near) {                                              // 最初から近くにいる村人
+    const aa = Math.random() * Math.PI * 2, rr = rnd(80, 260);
+    n.x = clamp(well.x + Math.cos(aa) * rr, 10, WORLD_W - 10);
+    n.y = clamp(well.y + Math.sin(aa) * rr, 10, WORLD_H - 10);
+  } else {
+    n.x = n.spawn.x + rnd(-8, 8); n.y = n.spawn.y + rnd(-8, 8);
+  }
+}
+
+function nearestWellIndex(pos) {
+  let nearest = 0, nearestDist = Infinity;
+  for (let i = 0; i < WELLS.length; i++) {
+    const d = Math.hypot(pos.x - WELLS[i].x, pos.y - WELLS[i].y);
+    if (d < nearestDist) { nearest = i; nearestDist = d; }
+  }
+  return nearest;
+}
+
+function playerTargetWell() {
+  let nearest = 0, nearestDist = Infinity;
+  for (let i = 0; i < WELLS.length; i++) {
+    const d = Math.hypot(P.x - WELLS[i].x, P.y - WELLS[i].y);
+    if (G.wells[i].level > 0.01 && d < nearestDist) { nearest = i; nearestDist = d; }
+  }
+  return nearestDist < Infinity ? nearest : nearestWellIndex(P);
+}
+
+// ---------- 1日のはじまり ----------
+function startDay() {
+  const d = G.day;
+  // 日がたつほど難しくなる（干ばつがひどくなるイメージ）
+  G.quota = 10 + d * 4;                                    // 家族が必要な水
+  const cap = Math.max(120, 260 - (d - 1) * 20) / WELLS.length;
+  const refill = Math.max(1.2, 2.4 - 0.15 * (d - 1)) / WELLS.length;
+  G.wells = WELLS.map(() => ({ level: cap, cap, refill }));
+  G.time = DAY_LEN; G.slotT = 0;
+  G.today = { delivered: 0, stolenFrom: 0, stolenBy: 0 };
+  P.x = DEP.x + 14; P.y = DEP.y + 10; P.carry = 0; P.stamina = 100; P.tired = false;
+  P.stealCd = 0;
+
+  const count = Math.min(150, 80 + d * 10);                // 村人の数（日ごとに増える）
+  const roughRate = Math.min(0.5, 0.2 + 0.04 * d);         // 乱暴な人の割合
+  npcs = []; parts = [];
+  for (let i = 0; i < count; i++) {
+    const n = {
+      x: 0, y: 0, vx: 0, vy: 0, state: 'away', timer: 0,
+      load: 0, want: 4, patience: 30, tx: 0, ty: 0, dd: 0,
+      speed: rnd(30, 44), walk: Math.random() * 10,
+      rough: Math.random() < roughRate,
+      shirt: SHIRTS[Math.random() * SHIRTS.length | 0],
+      skin: SKINS[Math.random() * SKINS.length | 0],
+      spawn: SPAWNS[Math.random() * SPAWNS.length | 0],
+      drawing: false, stealCd: 0
+    };
+    if (Math.random() < 0.3) spawnNPC(n, true);            // 3割は最初から井戸の近く
+    else n.timer = rnd(0, 55);                             // 残りはあとから順番に来る
+    npcs.push(n);
+  }
+}
+
+// ---------- 村人の動き ----------
+function updateNPC(n, dt) {
+  // 家に帰っている最中は、しばらくしたらまた水くみに来る
+  if (n.state === 'away') {
+    n.timer -= dt;
+    if (n.timer <= 0 && G.time > 8) spawnNPC(n, false);
+    return;
+  }
+  n.stealCd -= dt;
+  let tx, ty, spd = n.speed;
+
+  if (n.state === 'toWell') {
+    tx = n.tx; ty = n.ty;
+    // 乱暴な村人は、水を持っているプレイヤーを追いかけて奪おうとする
+    if (n.rough && P.carry > 0.5 && dist(n, P) < 90) { tx = P.x; ty = P.y; spd *= 1.25; }
+    // 井戸の近くで長く待たされるとあきらめて帰る
+    const well = G.wells[n.well];
+    if (!n.drawing && dist(n, WELLS[n.well]) < 75) {
+      n.patience -= dt;
+      if (n.patience <= 0) n.state = 'toHome';
+    }
+    // 順番が回ってきたら水をくむ
+    if (n.drawing && well.level > 0) {
+      const a = Math.min(0.5 * dt, well.level, n.want - n.load);
+      well.level -= a; n.load += a;
+      if (n.load >= n.want - 0.01) { n.state = 'toHome'; n.drawing = false; }
+    }
+  }
+  if (n.state === 'toHome') {                              // 水を持って（または、あきらめて）帰る
+    tx = n.spawn.x; ty = n.spawn.y;
+    if (Math.hypot(tx - n.x, ty - n.y) < 8) { n.state = 'away'; n.timer = rnd(6, 20); return; }
+  }
+
+  const dx = tx - n.x, dy = ty - n.y, d = Math.hypot(dx, dy);
+  const wx = d > 3 ? dx / d * spd : 0, wy = d > 3 ? dy / d * spd : 0;
+  const k = Math.min(1, dt * 5);                           // なめらかに速度を変える
+  n.vx += (wx - n.vx) * k; n.vy += (wy - n.vy) * k;
+  n.x += n.vx * dt; n.y += n.vy * dt;
+  n.walk += Math.hypot(n.vx, n.vy) * dt / 5;
+}
+
+// ---------- 人どうしの押し合い（群衆の動き） ----------
+function separate() {
+  const act = npcs.filter(n => n.state !== 'away');
+  const MIN = BODY_R * 2, MIN2 = MIN * MIN;
+  for (let it = 0; it < 2; it++) {
+    // 村人どうし：お互いに半分ずつ押しのける
+    for (let i = 0; i < act.length; i++) {
+      const a = act[i];
+      for (let j = i + 1; j < act.length; j++) {
+        const b = act[j];
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+        if (d2 < MIN2) {
+          if (d2 < 0.0001) { a.x += rnd(-.5, .5); a.y += rnd(-.5, .5); continue; }
+          const d = Math.sqrt(d2), o = (MIN - d) * 0.5, nx = dx / d, ny = dy / d;
+          a.x -= nx * o * .5; a.y -= ny * o * .5;
+          b.x += nx * o * .5; b.y += ny * o * .5;
+        }
+      }
+      // 井戸は壁
+      for (const well of WELLS) {
+        const wd = Math.hypot(a.x - well.x, a.y - well.y);
+        if (wd < WELL_R + BODY_R) {
+          const nx = (a.x - well.x) / (wd || 1), ny = (a.y - well.y) / (wd || 1);
+          a.x = well.x + nx * (WELL_R + BODY_R); a.y = well.y + ny * (WELL_R + BODY_R);
+        }
+      }
+      a.x = clamp(a.x, 6, WORLD_W - 6); a.y = clamp(a.y, 6, WORLD_H - 6);
+    }
+    // プレイヤーと村人：プレイヤーのほうが少し強く押せる（村人7：プレイヤー3）
+    for (const n of act) {
+      const dx = n.x - P.x, dy = n.y - P.y, d = Math.hypot(dx, dy);
+      if (d < MIN && d > 0.0001) {
+        const o = MIN - d, nx = dx / d, ny = dy / d;
+        n.x += nx * o * 0.7; n.y += ny * o * 0.7;
+        P.x -= nx * o * 0.3; P.y -= ny * o * 0.3;
+      }
+    }
+    // プレイヤーも井戸は通れない
+    for (const well of WELLS) {
+      const wd = Math.hypot(P.x - well.x, P.y - well.y);
+      if (wd < WELL_R + BODY_R) {
+        const nx = (P.x - well.x) / (wd || 1), ny = (P.y - well.y) / (wd || 1);
+        P.x = well.x + nx * (WELL_R + BODY_R); P.y = well.y + ny * (WELL_R + BODY_R);
+      }
+    }
+    P.x = clamp(P.x, 6, WORLD_W - 6); P.y = clamp(P.y, 6, WORLD_H - 6);
+  }
+}
+
+// ---------- 毎フレームの更新 ----------
+let lastDraw = 0, lastEmpty = 0, lastDeliver = 0, hudT = 0;
+function update(dt) {
+  // --- 時間 ---
+  G.time -= dt;
+  if (G.time <= 0) { endDay(); return; }
+  // 井戸は少しずつ水が湧く
+  for (const well of G.wells) well.level = Math.min(well.cap, well.level + well.refill * dt);
+
+  // --- プレイヤーの移動 ---
+  let dx = (keys.arrowright || keys.d ? 1 : 0) - (keys.arrowleft || keys.a ? 1 : 0);
+  let dy = (keys.arrowdown || keys.s ? 1 : 0) - (keys.arrowup || keys.w ? 1 : 0);
+  P.moving = !!(dx || dy);
+  if (P.moving) { const l = Math.hypot(dx, dy); dx /= l; dy /= l; }
+
+  // Shiftでダッシュ（体力を使う）。ダッシュ中は周りを押しのけられる
+  P.dash = !!(keys.shift && P.moving && !P.tired && P.stamina > 0);
+  if (P.dash) {
+    P.stamina -= 38 * dt;
+    if (P.stamina <= 0) { P.stamina = 0; P.tired = true; }
+  } else {
+    P.stamina = Math.min(100, P.stamina + 16 * dt);
+    if (P.tired && P.stamina >= 30) P.tired = false;
+  }
+  // 水を持つほど遅くなる（水は重い！）
+  const spd = 62 * (1 - 0.035 * P.carry) * (P.dash ? 1.55 : 1);
+  P.x += dx * spd * dt; P.y += dy * spd * dt;
+  if (P.moving) { P.walk += spd * dt / 5; G.total.px += spd * dt; }
+  if (P.dash) {
+    dust(P.x, P.y);
+    if (P.carry > 0) {                                     // 走ると水がこぼれる
+      P.carry = Math.max(0, P.carry - 0.25 * dt);
+      if (Math.random() < 0.2) drops(P.x, P.y, 1);
+    }
+  }
+  P.stealCd -= dt;
+
+  // --- 井戸の順番を決める（井戸に近い村人から先に水をくむ） ---
+  G.slotT -= dt;
+  if (G.slotT <= 0) {
+    G.slotT = 0.2;
+    const queues = WELLS.map(() => []);
+    for (const n of npcs) {
+      n.drawing = false;
+      if (n.state === 'toWell') {
+        const d = dist(n, WELLS[n.well]);
+        if (d < 36) { n.dd = d; queues[n.well].push(n); }
+      }
+    }
+    for (let wellIndex = 0; wellIndex < queues.length; wellIndex++) {
+      const queue = queues[wellIndex];
+      queue.sort((a, b) => a.dd - b.dd);
+      if (G.wells[wellIndex].level > 0.01)
+        for (let i = 0; i < Math.min(SLOTS, queue.length); i++) queue[i].drawing = true;
+    }
+  }
+
+  // --- 村人の更新と押し合い ---
+  for (const n of npcs) updateNPC(n, dt);
+  separate();
+
+  // --- ダッシュで押しのける（押しのけ） ---
+  if (P.dash) {
+    for (const n of npcs) {
+      if (n.state === 'away') continue;
+      const ddx = n.x - P.x, ddy = n.y - P.y, d = Math.hypot(ddx, ddy);
+      if (d < 17 && d > 0.01) { n.x += ddx / d * 140 * dt; n.y += ddy / d * 140 * dt; }
+    }
+  }
+
+  // --- 水の奪い合い ---
+  for (const n of npcs) {
+    if (n.state === 'away') continue;
+    const d = dist(n, P);
+    // 乱暴な村人にぶつかると、水を奪われる
+    if (n.rough && d < 10 && P.carry > 0.5 && n.stealCd <= 0 && n.state !== 'toHome') {
+      const a = Math.min(1.5, P.carry);
+      P.carry -= a; n.load += a; n.stealCd = 3;
+      G.today.stolenFrom += a; G.total.stolenFrom += a;
+      if (n.load >= n.want) { n.state = 'toHome'; n.drawing = false; }
+      drops(P.x, P.y, 6, '#4aa3df'); beep(130, 0.18, 'sawtooth', 0.05);
+      msg('水を奪われた！');
+    }
+    // 帰る村人に、ダッシュでぶつかると水を奪える（ずるいけど、生きるため…）
+    if (P.dash && d < 11 && n.state === 'toHome' && n.load > 0.5 && P.stealCd <= 0 && P.carry < CARRY_MAX - 0.1) {
+      const a = Math.min(1.5, n.load, CARRY_MAX - P.carry);
+      n.load -= a; P.carry += a; P.stealCd = 0.6;
+      G.today.stolenBy += a; G.total.stolenBy += a;
+      drops(n.x, n.y, 5, '#9bd4ff'); beep(300, 0.1, 'square', 0.05);
+      msg('水を奪ってしまった…');
+    }
+  }
+
+  // --- 井戸で水をくむ ---
+  const act = keys[' '] || keys.e || keys.z;
+  const wellIndex = playerTargetWell(), well = G.wells[wellIndex];
+  if (act && dist(P, WELLS[wellIndex]) < DRAW_R) {
+    if (well.level > 0.01) {
+      if (P.carry < CARRY_MAX) {
+        const a = Math.min(3 * dt, well.level, CARRY_MAX - P.carry);
+        well.level -= a; P.carry += a;
+        if (performance.now() - lastDraw > 180) { lastDraw = performance.now(); beep(600 + P.carry * 30, 0.05); }
+      } else msg('タンクがいっぱい！家へ運ぼう');
+    } else if (performance.now() - lastEmpty > 2500) {
+      lastEmpty = performance.now(); msg('井戸の水が出ない…湧くのを待つしかない');
+    }
+  }
+
+  // --- 家に水を届ける ---
+  if (dist(P, DEP) < DEP_R && P.carry > 0.01) {
+    const a = Math.min(P.carry, 10 * dt);
+    P.carry -= a; G.stored += a;
+    G.today.delivered += a; G.total.delivered += a;
+    if (performance.now() - lastDeliver > 200) { lastDeliver = performance.now(); beep(880, 0.05); }
+    if (P.carry < 0.02) { P.carry = 0; msg('水を家に届けた！'); }
+  }
+
+  // --- パーティクル ---
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 160 * dt; p.life -= dt; }
+  parts = parts.filter(p => p.life > 0);
+
+  // --- メッセージの消去 ---
+  msgT -= dt; if (msgT <= 0) el('msg').style.opacity = 0;
+}
+
+// ---------- 描画 ----------
+function draw() {
+  // カメラ：プレイヤーを中心に、マップのはしでは止まる
+  const cx = Math.round(clamp(P.x - VIEW_W / 2, 0, WORLD_W - VIEW_W));
+  const cy = Math.round(clamp(P.y - VIEW_H / 2, 0, WORLD_H - VIEW_H));
+  ctx.drawImage(ground, -cx, -cy);
+
+  // 奥にいるものから順に描く（y座標が小さいほど奥）
+  const list = [
+    { y: HOME.y + 6,  f: () => drawHouse(cx, cy) },
+    ...WELLS.map((position, index) => ({
+      y: position.y + 12, f: () => drawWell(position, G.wells[index], index, cx, cy)
+    })),
+    { y: P.y,         f: () => drawPlayer(cx, cy) }
+  ];
+  for (const n of npcs) if (n.state !== 'away') list.push({ y: n.y, f: () => drawNPC(n, cx, cy) });
+  list.sort((a, b) => a.y - b.y);
+  for (const o of list) o.f();
+
+  // パーティクル
+  for (const p of parts) { ctx.fillStyle = p.col; ctx.fillRect(Math.round(p.x - cx), Math.round(p.y - cy), 1, 1); }
+
+  // 水がなければ各井戸の方向を番号付きで表示し、持っていれば家を案内する
+  if (G.mode === 'play') {
+    const goals = P.carry > 0.5 ? [{ pos: DEP, label: '', color: '#ffd84a' }]
+      : WELLS.map((well, index) => ({ pos: well, label: String(index + 1), color: '#7fd3ff' }));
+    for (const goal of goals) {
+      const sx = goal.pos.x - cx, sy = goal.pos.y - cy;
+      if (sx >= 8 && sx <= VIEW_W - 8 && sy >= 18 && sy <= VIEW_H - 8) continue;
+      const gx = goal.pos.x - P.x, gy = goal.pos.y - P.y;
+      const a = Math.atan2(gy, gx);
+      const px = P.x - cx, py = P.y - cy;
+      const edgeX = Math.cos(a) > 0 ? VIEW_W - 12 : 12;
+      const edgeY = Math.sin(a) > 0 ? VIEW_H - 12 : 18;
+      const t = Math.min(
+        Math.abs((edgeX - px) / (Math.cos(a) || 0.0001)),
+        Math.abs((edgeY - py) / (Math.sin(a) || 0.0001))
+      );
+      ctx.save();
+      ctx.translate(px + Math.cos(a) * t, py + Math.sin(a) * t);
+      ctx.rotate(a);
+      ctx.fillStyle = goal.color;
+      ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(-3, -3); ctx.lineTo(-3, 3); ctx.fill();
+      if (goal.label) {
+        ctx.rotate(-a);
+        ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(goal.label, 0, -5);
+      }
+      ctx.restore();
+    }
+  }
+
+  // 夕方になると空気がオレンジ色になる
+  const late = Math.max(0, (1 - G.time / DAY_LEN) - 0.5) * 0.5;
+  if (late > 0) { ctx.fillStyle = `rgba(255,100,30,${late.toFixed(3)})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+}
+
+// ---------- HUD（上の数値）の更新 ----------
+function updateHud() {
+  el('hDay').textContent = G.day + '日目';
+  el('hStage').textContent = G.tutorial ? 'チュートリアル' : '本編';
+  el('bTime').firstElementChild.style.width = (100 * G.time / DAY_LEN) + '%';
+  el('hHearts').textContent = '家族 ' + '♥'.repeat(Math.max(0, G.hearts)) + '♡'.repeat(Math.max(0, 3 - G.hearts));
+  el('hCarry').textContent = P.carry.toFixed(1);
+  el('hCap').textContent = CARRY_MAX;
+  el('hStored').textContent = G.stored.toFixed(1);
+  el('hQuota').textContent = G.quota;
+  const wellIndex = playerTargetWell(), well = G.wells[wellIndex];
+  el('hWellLabel').textContent = '井戸' + (wellIndex + 1);
+  el('bWell').firstElementChild.style.width = (100 * well.level / well.cap) + '%';
+  el('bStam').firstElementChild.style.width = P.stamina + '%';
+  el('hStored').className = G.stored >= G.quota ? '' : 'hot';
+}
+
+// ---------- 日没 ----------
+function endDay() {
+  G.mode = 'dayend';
+  const lost = P.carry; P.carry = 0;                      // 日没までに届けられなかった水は無効
+  for (const k in keys) keys[k] = false;
+  [523, 440, 349, 262].forEach((f, i) => setTimeout(() => beep(f, 0.2, 'triangle', 0.06), i * 160));
+
+  if (G.tutorial) {
+    showScreen(`<h2>チュートリアル終了</h2>
+      <p>水くみの一日、おつかれさまでした。</p>
+      <p>ここから本編の1日目が始まります。チュートリアルの結果は本編に引き継がれません。</p>`,
+    '本編を始める', startMainGame);
+    return;
+  }
+
+  let h = `<h2>${G.day}日目　日没</h2>`;
+  if (lost > 0.5) h += `<p>日没までに家へ届けられなかった水が ${lost.toFixed(1)}L ありました。</p>`;
+  if (G.stored >= G.quota) {
+    G.stored -= G.quota; G.okDays++;
+    h += `<p>家族は今日の分（${G.quota}L）の水を飲めた。</p>`;
+  } else {
+    h += `<p class="bad">水が足りない！（必要 ${G.quota}L ／ 家にあった水 ${G.stored.toFixed(1)}L）…家族の誰かが具合を悪くした。</p>`;
+    G.stored = 0; G.hearts--;
+  }
+  h += `<p>今日の水の奪い合い：奪われた ${G.today.stolenFrom.toFixed(1)}L ／ 奪った ${G.today.stolenBy.toFixed(1)}L</p>`;
+  h += `<p>ここまでに歩いた距離：約 ${(G.total.px * PX_TO_M / 1000).toFixed(1)} km（1ドット＝2mとして）</p>`;
+  h += `<div class="fact">💧 ${FACTS[(G.day - 1) % FACTS.length]}</div>`;
+
+  if (G.hearts <= 0) { gameOver(h); return; }
+  h += `<p>明日は必要な水が増え、井戸の水は減り、村人は増える…。</p>`;
+  showScreen(h, '明日へ', () => { G.day++; startDay(); G.mode = 'play'; });
+}
+
+function startMainGame() {
+  G.tutorial = false;
+  G.day = 1; G.hearts = 3; G.stored = 0; G.okDays = 0;
+  G.total = { delivered: 0, stolenFrom: 0, stolenBy: 0, px: 0 };
+  startDay(); G.mode = 'play';
+}
+
+// ---------- ゲームオーバー ----------
+function gameOver(prevHtml) {
+  G.mode = 'over';
+  if (G.okDays > best) { best = G.okDays; try { localStorage.setItem('mizu_best', best); } catch (e) {} }
+  const km = (G.total.px * PX_TO_M / 1000).toFixed(1);
+  let h = `<h2>家族を守れなかった…</h2>` + prevHtml.replace(/<h2>.*?<\/h2>/, '');
+  h += `<p>家族を守れた日数：<b>${G.okDays}日</b>（ベスト ${best}日）</p>`;
+  h += `<p>運んだ水の合計：${G.total.delivered.toFixed(0)}L ／ 歩いた距離：約${km}km ／ 奪った水：${G.total.stolenBy.toFixed(1)}L</p>`;
+  h += `<div class="fact"><b>ふりかえり</b><ul>
+    <li>他の人から水を奪ったとき（奪われたとき）、どんな気持ちだった？</li>
+    <li>自分は日本で、1日にどれくらい水を使っている？ 家から水場までの距離は？</li>
+    <li>この村の人たちが、奪い合わずに水を手に入れるには、何があればいいと思う？</li></ul></div>`;
+  showScreen(h, 'もう一度', () => {
+    startMainGame();
+  });
+}
+
+// ---------- タイトル ----------
+function showTitle() {
+  G.mode = 'title';
+  const h = `<h1>みずのうばいあい</h1>
+    <div class="sub">チュートリアル</div>
+    <div class="sub">― 中央アフリカの小さな村の、ある一日 ―</div>
+    <p>あなたは村の少年。家族のために、毎日決まった量の水を<b>村にある3つの遠い井戸</b>のどれかから家へ運ばなければならない。
+    でも、水がほしいのは村のみんな同じ。井戸の水は、少しずつしか湧かない。</p>
+    <p>まずチュートリアルで一日を体験し、終了後に本編の1日目が始まります。
+    <b>本編に「クリア」はありません。</b>日がたつほど必要な水は増え、井戸は枯れていきます。何日、家族を守れる？（ベスト：${best}日）</p>
+    <ul>
+      <li><kbd>矢印</kbd> / <kbd>WASD</kbd>：移動　／　水を持つほど、足が遅くなる</li>
+      <li>井戸の近くで <kbd>Space</kbd> 長押し：水をくむ　／　家の水がめに近づくと水を届けられる</li>
+      <li><kbd>Shift</kbd>：ダッシュして人を押しのける（体力を使う・走ると水がこぼれる）</li>
+      <li>赤い鉢巻の人は乱暴。水を持っていると奪いにくる！</li>
+    </ul>`;
+  showScreen(h, 'はじめる', () => { G.mode = 'play'; });
+}
+
+// ---------- メインループ ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);        // タブを切り替えても急に進まないように制限
+  last = now;
+  if (G.mode === 'play') update(dt);
+  draw();
+  hudT -= dt;
+  if (hudT <= 0) { hudT = 0.1; updateHud(); }
+  requestAnimationFrame(frame);
+}
+
+startDay();
+showTitle();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
